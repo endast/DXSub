@@ -14,6 +14,8 @@ DATABASE_URL = "sqlite:///file_tasks.db"
 engine = create_engine(DATABASE_URL, echo=False)
 Base = declarative_base()
 
+DONE_FILES = []
+
 
 class TaskStatus(PyEnum):
     WAITING = "Waiting"
@@ -50,10 +52,11 @@ def list_done_files(session):
         FileTask.job_id.is_not(None)).all()]
     orig_files = [{"original_file": f"{Path(f['file_id']).stem}.gz"} for f in files_found]
 
-    if len(orig_files) >= 10:
-        return random.choices(orig_files, k=1000)
-    else:
-        return orig_files
+    for orig in orig_files:
+        if orig not in DONE_FILES:
+            DONE_FILES.append(orig)
+
+    return DONE_FILES.copy()
 
 
 def start_job(file_chunk, paralell_count, session):
@@ -84,6 +87,7 @@ def setup_file_db(files, session):
 def get_waiting_count(session):
     return session.query(FileTask).filter(FileTask.status == TaskStatus.WAITING).count()
 
+
 def update_file_status(instance_status, file_status, session):
     running_files = session.query(FileTask).filter(
         FileTask.job_id.in_([i["job_id"] for i in instance_status])).filter(
@@ -112,8 +116,9 @@ def main(files, max_instances, chunk_size, paralell_count):
         setup_file_db(files=files, session=session)
 
         waiting_count = get_waiting_count(session)
+        running_instance_count = get_instance_status(session)
 
-        while waiting_count > 0:
+        while waiting_count > 0 or running_instance_count:
             # Update status
             instance_status = get_instance_status(session)
             file_status = list_done_files(session)
@@ -122,7 +127,7 @@ def main(files, max_instances, chunk_size, paralell_count):
             running_instance_count = len(get_instance_status(session))
             jobs_to_launch = max_instances - running_instance_count
 
-            print(f" {running_instance_count} jobs Running")
+            print(f"{running_instance_count} jobs Running")
 
             print(f"Can launch {jobs_to_launch} jobs ")
             launched_jobs = 0
@@ -136,7 +141,7 @@ def main(files, max_instances, chunk_size, paralell_count):
 
             print(f"\nLaunched {launched_jobs}")
             print("\nWaiting 2s\n")
-            time.sleep(1)
+            time.sleep(2)
             waiting_count = get_waiting_count(session)
 
     print("All jobs finished")
