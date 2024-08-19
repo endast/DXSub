@@ -1,0 +1,4 @@
+sqlalchemy==2.0.32
+tqdm==4.66.5
+dxpy==0.380.0
+pandas==2.2.2
