@@ -26,7 +26,7 @@ def run_dx_applet(applet_input, run_name, output_folder, instance_type, project_
 
 def list_dx_applets(applet_id, project_id):
     jobs = dx.find_jobs(executable=applet_id, project=project_id, describe=True)
-    jobs_list = [{"job_id": job['id'], "status": job['describe']['state']} for job in jobs]
+    jobs_list = [{"job_id": job['id'], "status": job['describe']['state'].lower()} for job in jobs]
     return jobs_list
 
 

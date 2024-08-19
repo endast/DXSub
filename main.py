@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import time
 from enum import Enum as PyEnum
 from pathlib import Path
@@ -18,10 +20,22 @@ Base = declarative_base()
 
 
 class TaskStatus(PyEnum):
-    WAITING = "Waiting"
-    RUNNING = "Running"
-    SUCCESSFUL = "Successful"
-    FAILED = "Failed"
+    WAITING = "waiting"
+    RUNNING = "running"
+    RUNNABLE = "runnable"
+    IN_PROGRESS = "in progress"
+    DONE = "done"
+    FAILED = "failed"
+    PARTIALLY_FAILED = "partially failed"
+    TERMINATING = "terminating"
+    TERMINATED = "terminated"
+    DEBUG_HOLD = "debug hold"
+    IDLE = "idle"
+
+
+NON_RUNNING_JOB_STATUSES = [TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.PARTIALLY_FAILED, TaskStatus.TERMINATING,
+                            TaskStatus.TERMINATED]
+RUNNING_JOB_STATUSES = [TaskStatus.RUNNING, TaskStatus.RUNNABLE, TaskStatus.WAITING, TaskStatus.IDLE]
 
 
 class FileTask(Base):
@@ -35,11 +49,11 @@ class FileTask(Base):
 Base.metadata.create_all(engine)
 
 
-def get_instance_status(project_id, applet_id, status_filter: TaskStatus = None):
+def get_instance_status(project_id, applet_id, status_filter: list = None):
     instances = dx_utils.list_dx_applets(applet_id, project_id)
 
     if status_filter:
-        instances = [i for i in instances if i["status"] == status_filter]
+        instances = [i for i in instances if i["status"] in [sf.value for sf in status_filter]]
 
     return instances
 
@@ -97,13 +111,15 @@ def update_file_status(instance_status, file_status, session):
         FileTask.job_id.in_([i["job_id"] for i in instance_status])).filter(
         FileTask.status == TaskStatus.RUNNING).all()
 
+    non_running_jobs = [job["job_id"] for job in instance_status if job["status"] in NON_RUNNING_JOB_STATUSES]
+
     failed_count = 0
     successful_count = 0
 
     for running_file in running_files:
-        if running_file.job_id in [job["job_id"] for job in instance_status if job["status"] != TaskStatus.RUNNING]:
+        if running_file.job_id in non_running_jobs:
             if running_file.file_name in [f["original_file"] for f in file_status]:
-                running_file.status = TaskStatus.SUCCESSFUL
+                running_file.status = TaskStatus.DONE
                 successful_count += 1
             else:
                 running_file.status = TaskStatus.WAITING
@@ -122,16 +138,16 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
         setup_file_db(files=files, session=session)
 
         waiting_count = get_waiting_count(session)
-        running_instance_count = len(get_instance_status(project_id, applet_id, TaskStatus.RUNNING))
+        running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
 
         while waiting_count > 0 or running_instance_count:
             instance_status = get_instance_status(project_id, applet_id)
             file_status = list_done_files(file_output_path, project_id=project_id)
             update_file_status(instance_status, file_status, session)
 
-            running_instance_count = len(get_instance_status(project_id, applet_id, TaskStatus.RUNNING))
+            running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
             jobs_to_launch = max_instances - running_instance_count
-            assert jobs_to_launch > 0
+            assert jobs_to_launch >= 0
 
             print(f"{running_instance_count} jobs Running")
 
@@ -143,9 +159,10 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
                     print(".", end="")
                     start_job(file_chunk, paralell_count, session, project_id, applet_id, instance_type, output_folder)
                     launched_jobs += 1
+                    time.sleep(1)
 
-            print(f"\nLaunched {launched_jobs}")
-            print(f"\nWaiting {WAIT_TIME}s\n")
+            print(f"\nLaunched {launched_jobs} jobs")
+            print(f"Waiting {WAIT_TIME}s\n")
             time.sleep(WAIT_TIME)
             waiting_count = get_waiting_count(session)
 
@@ -169,9 +186,9 @@ if __name__ == '__main__':
     instance_type = "mem1_ssd1_v2_x4"
     output_folder = "/snakemake-test/output"
 
-    max_instances, chunk_size, paralell_count = 2, 6, 3
+    MAX_INSTANCES, CHUNK_SIZE, paralell_count = 2, 6, 3
 
     raw_files = load_raw_files("chr1_files.csv")
 
-    main(files=raw_files, max_instances=max_instances, chunk_size=chunk_size, paralell_count=paralell_count,
+    main(files=raw_files, max_instances=MAX_INSTANCES, chunk_size=CHUNK_SIZE, paralell_count=paralell_count,
          applet_id=APPLET_ID, project_id=PROJECT_ID, instance_type=instance_type, output_folder=output_folder)
