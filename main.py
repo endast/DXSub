@@ -78,7 +78,7 @@ def start_job(file_chunk, parallel_count, session, project_id, applet_id, instan
     }
 
     job_id = dx_utils.run_dx_applet(applet_input=applet_input,
-                                    run_name=f"From jupyter {parallel_count} {instance_type}",
+                                    run_name=f"DXSub {len(file_chunk)} {parallel_count} {instance_type}",
                                     output_folder=output_folder, project_id=project_id, applet_id=applet_id,
                                     instance_type=instance_type)
 
@@ -191,9 +191,14 @@ if __name__ == '__main__':
     INSTANCE_TYPE = "mem1_ssd1_v2_x2"
     output_dir = "/snakemake-test/output"
 
-    MAX_INSTANCES, CHUNK_SIZE, PARALLEL_COUNT = 1, 2, 2
+    MAX_INSTANCES, CHUNK_SIZE, PARALLEL_COUNT = 2, 4, 2
 
-    raw_files = load_raw_files("chr1_files.csv")
+    raw_files = load_raw_files("chr1_files_small.csv")
 
     main(files=raw_files, max_instances=MAX_INSTANCES, chunk_size=CHUNK_SIZE, paralell_count=PARALLEL_COUNT,
          applet_id=APPLET_ID, project_id=PROJECT_ID, instance_type=INSTANCE_TYPE, output_folder=output_dir)
+
+    # TODO
+    # Fix hardcoded done files
+    # Add CLI
+    # Fix applet
