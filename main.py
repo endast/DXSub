@@ -64,7 +64,7 @@ def get_instance_status(project_id, applet_id, status_filter: list = None):
 def list_done_files(file_path, project_id):
     files_found = dx_utils.list_dx_dir(file_path, project_id=project_id)
 
-    orig_files = [{"original_file": f"{Path(f).stem}.gz"} for f in files_found]
+    orig_files = [{"original_file": f"{Path(f).stem}.vcf.gz"} for f in files_found]
 
     return orig_files
 
@@ -114,7 +114,8 @@ def update_file_status(instance_status, file_status, session):
         FileTask.job_id.in_([i["job_id"] for i in instance_status])).filter(
         FileTask.status == TaskStatus.RUNNING).all()
 
-    non_running_jobs = [job["job_id"] for job in instance_status if job["status"] in NON_RUNNING_JOB_STATUSES]
+    non_running_jobs = [job["job_id"] for job in instance_status if
+                        job["status"] in [s.value for s in NON_RUNNING_JOB_STATUSES]]
 
     failed_count = 0
     successful_count = 0
@@ -130,18 +131,20 @@ def update_file_status(instance_status, file_status, session):
                 failed_count += 1
 
     session.commit()
-    logging.info(f"Successfully loaded {successful_count} files")
-    logging.debug(f"Failed {failed_count} files")
+    if successful_count > 0:
+        logging.info(f"Successfully loaded {successful_count} files")
+    if failed_count > 0:
+        logging.info(f"Failed {failed_count} files")
 
 
 def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id, instance_type, output_folder):
     with Session(engine) as session:
         setup_file_db(files=files, session=session)
 
-        waiting_count = get_waiting_count(session)
+        waiting_file_count = get_waiting_count(session)
         running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
 
-        while waiting_count > 0 or running_instance_count:
+        while waiting_file_count > 0 or running_instance_count:
             instance_status = get_instance_status(project_id, applet_id)
             file_status = list_done_files(output_folder, project_id=project_id)
             update_file_status(instance_status, file_status, session)
@@ -166,7 +169,7 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 
             logging.debug(f"Waiting {WAIT_TIME}s ...")
             time.sleep(WAIT_TIME)
-            waiting_count = get_waiting_count(session)
+            waiting_file_count = get_waiting_count(session)
 
     logging.info("All jobs finished")
 
