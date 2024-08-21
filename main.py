@@ -45,6 +45,7 @@ class FileTask(Base):
     __tablename__ = "tasks"
     file_id = Column(String, primary_key=True, index=True)
     file_name = Column(String, index=True)
+    output_file_name = Column(String, index=True)
     job_id = Column(String, index=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.WAITING)
 
@@ -63,10 +64,7 @@ def get_instance_status(project_id, applet_id, status_filter: list = None):
 
 def list_done_files(file_path, project_id):
     files_found = dx_utils.list_dx_dir(file_path, project_id=project_id)
-
-    orig_files = [{"original_file": f"{Path(f).stem}.vcf.gz"} for f in files_found]
-
-    return orig_files
+    return files_found
 
 
 def start_job(file_chunk, parallel_count, session, project_id, applet_id, instance_type, output_folder):
@@ -97,7 +95,9 @@ def get_file_chunk(chunk_size, session):
 
 def setup_file_db(files, session):
     try:
-        file_tasks = [FileTask(file_name=file["file_name"], file_id=file["file_id"]) for file in files]
+        file_tasks = [
+            FileTask(file_name=file["file_name"], file_id=file["file_id"], output_file_name=file["output_file_name"])
+            for file in files]
         session.add_all(file_tasks)
         session.commit()
     except IntegrityError as _:
@@ -122,7 +122,7 @@ def update_file_status(instance_status, file_status, session):
 
     for running_file in running_files:
         if running_file.job_id in non_running_jobs:
-            if running_file.file_name in [f["original_file"] for f in file_status]:
+            if running_file.output_file_name in file_status:
                 running_file.status = TaskStatus.DONE
                 successful_count += 1
             else:
@@ -170,6 +170,8 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
             logging.debug(f"Waiting {WAIT_TIME}s ...")
             time.sleep(WAIT_TIME)
             waiting_file_count = get_waiting_count(session)
+            running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
+
 
     logging.info("All jobs finished")
 
@@ -180,7 +182,7 @@ def load_raw_files(file_list_path):
     file_list = []
 
     for f in raw_file_df.itertuples():
-        file_list.append({"file_name": f[1], "file_id": f[2]})
+        file_list.append({"file_name": f[1], "file_id": f[2], "output_file_name": f[3]})
 
     return file_list
 
@@ -191,7 +193,7 @@ if __name__ == '__main__':
     INSTANCE_TYPE = "mem1_ssd1_v2_x2"
     output_dir = "/snakemake-test/output"
 
-    MAX_INSTANCES, CHUNK_SIZE, PARALLEL_COUNT = 2, 4, 2
+    MAX_INSTANCES, CHUNK_SIZE, PARALLEL_COUNT = 2, 8, 2
 
     raw_files = load_raw_files("chr1_files_small.csv")
 
