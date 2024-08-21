@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import declarative_base
 
 import dx_utils
+import click
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -139,6 +140,16 @@ def update_file_status(instance_status, file_status, session):
         logging.info(f"Failed {failed_count} files")
 
 
+def load_raw_files(file_list_path):
+    raw_file_df = pd.read_csv(file_list_path)
+
+    file_list = []
+
+    for f in raw_file_df.itertuples():
+        file_list.append({"file_name": f[1], "file_id": f[2], "output_file_name": f[3]})
+
+    return file_list
+
 def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id, instance_type, output_folder):
     with Session(engine) as session:
         setup_file_db(files=files, session=session)
@@ -177,30 +188,29 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
     logging.info("All jobs finished")
 
 
-def load_raw_files(file_list_path):
-    raw_file_df = pd.read_csv(file_list_path)
+@click.command()
+@click.option('--file_list', required=True, type=str, help='Path to the CSV file containing the file list.')
+@click.option('--max_instances', required=True, type=int, help='Maximum number of instances to run.')
+@click.option('--chunk_size', required=True, type=int, help='Number of files to process in one chunk.')
+@click.option('--parallel_count', required=True, type=int, help='Number of parallel jobs to run.')
+@click.option('--applet_id', required=True, type=str, help='Applet ID to run jobs on.')
+@click.option('--project_id', required=True, type=str, help='Project ID to associate with jobs.')
+@click.option('--instance_type', required=True, type=str, help='Type of instance to run jobs on.')
+@click.option('--output_folder', required=True, type=str, help='Output folder path for processed files.')
+def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder):
+    raw_files = load_raw_files(file_list)
 
-    file_list = []
-
-    for f in raw_file_df.itertuples():
-        file_list.append({"file_name": f[1], "file_id": f[2], "output_file_name": f[3]})
-
-    return file_list
+    main(
+        files=raw_files,
+        max_instances=max_instances,
+        chunk_size=chunk_size,
+        paralell_count=parallel_count,
+        applet_id=applet_id,
+        project_id=project_id,
+        instance_type=instance_type,
+        output_folder=output_folder
+    )
 
 
 if __name__ == '__main__':
-    PROJECT_ID = 'project-GkZfY7QJ704p8J8vfZ89gj6k'
-    APPLET_ID = 'applet-Gq2z89jJ704qPpPg1FV2V6y2'
-    INSTANCE_TYPE = "mem1_ssd1_v2_x2"
-    output_dir = "/snakemake-test/output"
-
-    MAX_INSTANCES, CHUNK_SIZE, PARALLEL_COUNT = 2, 8, 2
-
-    raw_files = load_raw_files("chr1_files_small.csv")
-
-    main(files=raw_files, max_instances=MAX_INSTANCES, chunk_size=CHUNK_SIZE, paralell_count=PARALLEL_COUNT,
-         applet_id=APPLET_ID, project_id=PROJECT_ID, instance_type=INSTANCE_TYPE, output_folder=output_dir)
-
-    # TODO
-    # Fix applet
-    # Add CLI
+    cli()
