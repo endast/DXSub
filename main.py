@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import time
 from enum import Enum as PyEnum
-from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import Column, String, Enum
@@ -68,7 +67,10 @@ def list_done_files(file_path, project_id):
 
 
 def start_job(file_chunk, parallel_count, session, project_id, applet_id, instance_type, output_folder):
-    commands = dx_utils.create_dx_cmd(file_list=file_chunk, project_id=project_id)
+    cmd_template ='touch {output_file_name} && mv -v {output_file_name}.bcf {output_path}'
+    extra_vars = {"output_path": output_folder}
+
+    commands = dx_utils.create_dx_cmd(cmd_template=cmd_template, file_list=file_chunk, extra_vars=extra_vars)
 
     applet_input = {
         "command_list": commands,
@@ -172,7 +174,6 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
             waiting_file_count = get_waiting_count(session)
             running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
 
-
     logging.info("All jobs finished")
 
 
@@ -201,6 +202,6 @@ if __name__ == '__main__':
          applet_id=APPLET_ID, project_id=PROJECT_ID, instance_type=INSTANCE_TYPE, output_folder=output_dir)
 
     # TODO
-    # Fix hardcoded done files
-    # Add CLI
+    # Fix Command
     # Fix applet
+    # Add CLI

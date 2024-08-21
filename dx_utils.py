@@ -1,6 +1,6 @@
-from pathlib import Path
-
 import dxpy as dx
+
+from main import TaskStatus
 
 
 def list_dx_dir(folder_path, project_id):
@@ -30,13 +30,14 @@ def list_dx_applets(applet_id, project_id):
     return jobs_list
 
 
-def create_dx_cmd(file_list, project_id, samples="samples.csv", output_path="~/out/output_files"):
+def create_dx_cmd(file_list: [TaskStatus], cmd_template: str, extra_vars):
     commands = []
     for file in file_list:
-        file_name = Path(file.file_name)
-        file_id = file.file_id
-        commands.append(
-            f'dx download -f {project_id}:{file_id} && bcftools view --output-type u -e "FMT/GQ<=10 | smpl_sum(FMT/LAD)<10" {file_name} | bcftools +fill-tags --output-type u -- --tags HWE | bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15"  | bcftools view --samples-file {samples} --output-type b --output-file filtered_{file_name.stem.split(".")[0]}.bcf && mv -v filtered_{file_name.stem.split(".")[0]}.bcf {output_path} && rm {file_name}'
-        )
+        file_input = {"input_file_name": file.file_name,
+                      "output_file_name": file.output_file_name,
+                      "input_file_id": file.file_id,
+                      **extra_vars}
+
+        commands.append(cmd_template.format(**file_input))
 
     return commands
