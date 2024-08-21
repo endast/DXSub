@@ -190,7 +190,7 @@ def load_raw_files(file_list_path):
 
 if __name__ == '__main__':
     PROJECT_ID = 'project-GkZfY7QJ704p8J8vfZ89gj6k'
-    APPLET_ID = 'applet-GpjJzG8J704V240FYqP0gPx0'
+    APPLET_ID = 'applet-Gq2z89jJ704qPpPg1FV2V6y2'
     INSTANCE_TYPE = "mem1_ssd1_v2_x2"
     output_dir = "/snakemake-test/output"
 
