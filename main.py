@@ -4,6 +4,7 @@ import logging
 import time
 from enum import Enum as PyEnum
 
+import click
 import pandas as pd
 from sqlalchemy import Column, String, Enum
 from sqlalchemy import create_engine
@@ -12,7 +13,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import declarative_base
 
 import dx_utils
-import click
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
@@ -67,9 +67,10 @@ def list_done_files(file_path, project_id):
     return files_found
 
 
-def start_job(file_chunk, parallel_count, session, project_id, applet_id, instance_type, output_folder):
-    cmd_template ='touch {output_file_name} && mv -v {output_file_name} ~/out/output_files'
-    extra_vars = {"output_path": output_folder}
+def start_job(file_chunk, parallel_count, session, project_id, applet_id, instance_type, output_folder, cmd_template,
+              extra_vars):
+    if not extra_vars:
+        extra_vars = {}
 
     commands = dx_utils.create_dx_cmd(cmd_template=cmd_template, file_list=file_chunk, extra_vars=extra_vars)
 
@@ -150,7 +151,9 @@ def load_raw_files(file_list_path):
 
     return file_list
 
-def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id, instance_type, output_folder):
+
+def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id, instance_type, output_folder,
+         cmd_template, extra_vars):
     with Session(engine) as session:
         setup_file_db(files=files, session=session)
 
@@ -173,7 +176,8 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
             for _ in range(jobs_to_launch):
                 file_chunk = get_file_chunk(chunk_size, session)
                 if file_chunk:
-                    start_job(file_chunk, paralell_count, session, project_id, applet_id, instance_type, output_folder)
+                    start_job(file_chunk, paralell_count, session, project_id, applet_id, instance_type, output_folder,
+                              cmd_template, extra_vars)
                     launched_jobs += 1
                     time.sleep(1)
 
@@ -200,6 +204,9 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder):
     raw_files = load_raw_files(file_list)
 
+    cmd_template = 'touch {output_file_name} && mv -v {output_file_name} ~/out/output_files'
+    extra_vars = {"output_path": output_folder}
+
     main(
         files=raw_files,
         max_instances=max_instances,
@@ -208,7 +215,9 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
         applet_id=applet_id,
         project_id=project_id,
         instance_type=instance_type,
-        output_folder=output_folder
+        output_folder=output_folder,
+        cmd_template=cmd_template,
+        extra_vars=extra_vars
     )
 
 
