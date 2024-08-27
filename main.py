@@ -204,8 +204,33 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder):
     raw_files = load_raw_files(file_list)
 
-    cmd_template = 'touch {output_file_name} && mv -v {output_file_name} ~/out/output_files'
-    extra_vars = {"output_path": output_folder}
+    # {input_file_name}
+    # {output_file_name}
+    # {input_file_id}
+
+    cmd_template = '''
+    dx download {project_id}:{input_file_id} &&
+
+    bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
+    bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
+    bcftools filter --output-type u -e "F_MISSING > 0.1" | 
+    bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o {output_file_name} &&
+    mv -v {output_file_name} ~/out/output_files &&
+    output_file_bcf=$(dx upload ~/out/output_files/{output_file_name} --brief) &&
+    echo "Ok uploaded {output_file_name}" &&
+    dx-jobutil-add-output output_files "$output_file_bcf" --class=array:file &&
+    echo "File done: {output_file_name} $output_file_bcf" &&
+    bcftools +setGT --output-type v ~/out/output_files/{output_file_name} -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
+    bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" |
+    qctool -g - -filetype vcf -og {output_file_name}.bgen &&    
+    mv -v {output_file_name}.bgen ~/out/output_files &&
+    output_file_bgen=$(dx upload ~/out/output_files/{output_file_name}.bgen --brief) &&
+    dx-jobutil-add-output output_files "$output_file_bgen" --class=array:file &&
+    echo "File done: {output_file_name}.bgen $output_file_bgen" &&
+    rm -v {input_file_name} ~/out/output_files/{output_file_name} ~/out/output_files/{output_file_name}.bgen
+    '''.replace("\n", " ").strip()
+
+    extra_vars = {"output_path": output_folder, "project_id": project_id}
 
     main(
         files=raw_files,
