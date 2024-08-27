@@ -226,7 +226,13 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
     output_file_bgen=$(dx upload ~/out/output_files/{output_file_name}.bgen --brief) &&
     dx-jobutil-add-output output_files "$output_file_bgen" --class=array:file &&
     echo "File done: {output_file_name}.bgen $output_file_bgen" &&
-    rm -v {input_file_name} ~/out/output_files/{output_file_name} ~/out/output_files/{output_file_name}.bgen
+    rm -v {input_file_name} ~/out/output_files/{output_file_name} ~/out/output_files/{output_file_name}.bgen &&     
+    bcftools view --samples-file /cardinal_5k_samples.txt --output-type b step1.bcf -o 5k_{output_file_name} &&    
+    mv -v 5k_{output_file_name} ~/out/output_files &&
+    output_file_5k=$(dx upload ~/out/output_files/5k_{output_file_name} --brief) &&
+    dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
+    echo "File done: {output_file_name}.bgen $output_file_5k" &&
+    rm -v ~/out/output_files/5k_{output_file_name}
     '''.replace("\n", " ").strip()
 
     extra_vars = {"output_path": output_folder, "project_id": project_id}
