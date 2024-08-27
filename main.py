@@ -210,7 +210,6 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
 
     cmd_template = '''
     dx download {project_id}:{input_file_id} &&
-
     bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
     bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
     bcftools filter --output-type u -e "F_MISSING > 0.1" | 
@@ -220,8 +219,8 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
     echo "Ok uploaded {output_file_name}" &&
     dx-jobutil-add-output output_files "$output_file_bcf" --class=array:file &&
     echo "File done: {output_file_name} $output_file_bcf" &&
-    bcftools +setGT --output-type v ~/out/output_files/{output_file_name} -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
-    bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" |
+    bcftools +setGT --output-type u ~/out/output_files/{output_file_name} -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
+    bcftools filter --output-type v -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" |
     qctool -g - -filetype vcf -og {output_file_name}.bgen &&    
     mv -v {output_file_name}.bgen ~/out/output_files &&
     output_file_bgen=$(dx upload ~/out/output_files/{output_file_name}.bgen --brief) &&
