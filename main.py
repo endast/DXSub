@@ -231,7 +231,7 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
     mv -v 5k_{output_file_name} ~/out/output_files &&
     output_file_5k=$(dx upload ~/out/output_files/5k_{output_file_name} --brief) &&
     dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
-    echo "File done: {output_file_name}.bgen $output_file_5k" &&
+    echo "File done: 5k_{output_file_name} $output_file_5k" &&
     rm -v ~/out/output_files/5k_{output_file_name}
     '''.replace("\n", " ").strip()
 
