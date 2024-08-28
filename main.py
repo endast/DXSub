@@ -195,8 +195,8 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 @click.command()
 @click.option('--file_list', required=True, type=str, help='Path to the CSV file containing the file list.')
 @click.option('--max_instances', required=True, type=int, help='Maximum number of instances to run.')
-@click.option('--chunk_size', required=True, type=int, help='Number of files to process in one chunk.')
-@click.option('--parallel_count', required=True, type=int, help='Number of parallel jobs to run.')
+@click.option('--chunk_size', required=True, type=int, help='Number of files to process per instance.')
+@click.option('--parallel_count', required=True, type=int, help='Number of parallel jobs to run on each instance.')
 @click.option('--applet_id', required=True, type=str, help='Applet ID to run jobs on.')
 @click.option('--project_id', required=True, type=str, help='Project ID to associate with jobs.')
 @click.option('--instance_type', required=True, type=str, help='Type of instance to run jobs on.')
@@ -226,13 +226,13 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
     output_file_bgen=$(dx upload ~/out/output_files/{output_file_name}.bgen --brief) &&
     dx-jobutil-add-output output_files "$output_file_bgen" --class=array:file &&
     echo "File done: {output_file_name}.bgen $output_file_bgen" &&
-    rm -v {input_file_name} ~/out/output_files/{output_file_name} ~/out/output_files/{output_file_name}.bgen &&     
-    bcftools view --samples-file /cardinal_5k_samples.txt --output-type b step1.bcf -o 5k_{output_file_name} &&    
+    rm -v {input_file_name} ~/out/output_files/{output_file_name}.bgen &&     
+    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --output-type b ~/out/output_files/{output_file_name} -o 5k_{output_file_name} &&    
     mv -v 5k_{output_file_name} ~/out/output_files &&
     output_file_5k=$(dx upload ~/out/output_files/5k_{output_file_name} --brief) &&
     dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
     echo "File done: 5k_{output_file_name} $output_file_5k" &&
-    rm -v ~/out/output_files/5k_{output_file_name}
+    rm -v ~/out/output_files/5k_{output_file_name} ~/out/output_files/{output_file_name}
     '''.replace("\n", " ").strip()
 
     extra_vars = {"output_path": output_folder, "project_id": project_id}
