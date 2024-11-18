@@ -158,9 +158,10 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
         setup_file_db(files=files, session=session)
 
         waiting_file_count = get_waiting_count(session)
+        print(f"waiting_file_count {waiting_file_count}")
         running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
-
         while waiting_file_count > 0 or running_instance_count:
+            # import ipdb; ipdb.set_trace()
             instance_status = get_instance_status(project_id, applet_id)
             file_status = list_done_files(output_folder, project_id=project_id)
             update_file_status(instance_status, file_status, session)
@@ -203,40 +204,43 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 @click.option('--output_folder', required=True, type=str, help='Output folder path for processed files.')
 def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder):
     raw_files = load_raw_files(file_list)
-
     # {input_file_name}
     # {output_file_name}
     # {input_file_id}
 
     cmd_template = '''
     dx download {project_id}:{input_file_id} &&
+    dx download {project_id}:file-GvxbGZ8J704f2G6KJYfPFpfZ &&
+    echo "hi" &&
+    ls &&
+    echo "First filtering of bcf file" &&
     bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
     bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
     bcftools filter --output-type u -e "F_MISSING > 0.1" | 
     bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o {output_file_name} &&
     mv -v {output_file_name} ~/out/output_files &&
-    output_file_bcf=$(dx upload ~/out/output_files/{output_file_name} --brief) &&
-    echo "Ok uploaded {output_file_name}" &&
-    dx-jobutil-add-output output_files "$output_file_bcf" --class=array:file &&
-    echo "File done: {output_file_name} $output_file_bcf" &&
+    echo "File done: {output_file_name}" &&
+    echo "Second filtering of bcf file" &&
     bcftools +setGT --output-type u ~/out/output_files/{output_file_name} -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
-    bcftools filter --output-type v -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" |
-    qctool -g - -filetype vcf -og {output_file_name}.bgen &&    
-    mv -v {output_file_name}.bgen ~/out/output_files &&
-    output_file_bgen=$(dx upload ~/out/output_files/{output_file_name}.bgen --brief) &&
-    dx-jobutil-add-output output_files "$output_file_bgen" --class=array:file &&
-    echo "File done: {output_file_name}.bgen $output_file_bgen" &&
-    rm -v {input_file_name} ~/out/output_files/{output_file_name}.bgen &&     
-    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --output-type b ~/out/output_files/{output_file_name} -o 5k_{output_file_name} &&    
+    bcftools filter --output-type v -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" --output-type b -o filtered_{output_file_name} &&
+    mv -v filtered_{output_file_name} ~/out/output_files &&
+    echo "Filtering for 5k samples" &&
+    bcftools view --force-samples --samples-file 5kSamples.txt --output-type b ~/out/output_files/{output_file_name} -o 5k_{output_file_name} &&    
     mv -v 5k_{output_file_name} ~/out/output_files &&
+    output_file_filtered=$(dx upload ~/out/output_files/filtered_{output_file_name} --brief) &&
+    dx-jobutil-add-output output_files "$output_file_filtered" --class=array:file &&
+    echo "File uploaded: filtered_{output_file_name} $output_file_filtered" &&
     output_file_5k=$(dx upload ~/out/output_files/5k_{output_file_name} --brief) &&
     dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
-    echo "File done: 5k_{output_file_name} $output_file_5k" &&
-    rm -v ~/out/output_files/5k_{output_file_name} ~/out/output_files/{output_file_name}
+    echo "File done: 5k_{output_file_name} $output_file_5k" 
     '''.replace("\n", " ").strip()
 
-    extra_vars = {"output_path": output_folder, "project_id": project_id}
+    # run upload here but do it in parallel
+    # run set +e in the beginning of the script to throw error when it fials 
+    # add dx ls and check that the file names are uploaded
 
+    extra_vars = {"output_path": output_folder, "project_id": project_id}
+    print("starting")
     main(
         files=raw_files,
         max_instances=max_instances,
@@ -250,6 +254,34 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
         extra_vars=extra_vars
     )
 
-
+# output_file_bcf=$(dx upload ~/out/output_files/{output_file_name} --brief) && #shouldn't be uploaded
+# echo "Ok uploaded {output_file_name}" &&
+# dx-jobutil-add-output output_files "$output_file_bcf" --class=array:file &&
+#/cardinal_5k_samples.txt
 if __name__ == '__main__':
     cli()
+
+#    bcftools view --force-samples --samples-file 5kSamples.txt  --output-type b ~/out/output_files/{output_file_name} -o 5k_{output_file_name} &&    
+
+
+# bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
+# bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
+# bcftools filter --output-type u -e "F_MISSING > 0.1" | 
+# bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o {output_file_name} &&
+# mv -v {output_file_name} ~/out/output_files &&
+# echo "File done: {output_file_name}" &&
+# echo "Second filtering of bcf file" &&
+# bcftools +setGT --output-type u ~/out/output_files/{output_file_name} -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
+# bcftools filter --output-type v -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" --output-type b -o filtered_{output_file_name} &&
+# mv -v filtered_{output_file_name} ~/out/output_files &&
+# echo "Filtering for 500k samples" &&
+# bcftools view --force-samples --samples-file 5kSamples.csv  --output-type b ~/out/output_files/{output_file_name} -o 5k_{output_file_name} &&    
+# mv -v 5k_{output_file_name} ~/out/output_files &&
+# output_file_filtered=$(dx upload ~/out/output_files/filtered_{output_file_name} --brief) &&
+# dx-jobutil-add-output output_files "$output_file_filtered" --class=array:file &&
+# echo "File uploaded: filtered_{output_file_name} $output_file_filtered" &&
+# output_file_5k=$(dx upload ~/out/output_files/5k_{output_file_name} --brief) &&
+# dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
+# echo "File done: 5k_{output_file_name} $output_file_5k" &&
+# rm -v {input_file_name} ~/out/output_files/filtered_{output_file_name} &&   
+# rm -v ~/out/output_files/5k_{output_file_name} ~/out/output_files/{output_file_name}
