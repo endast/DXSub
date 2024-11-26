@@ -203,15 +203,12 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder, clevel):
     raw_files = load_raw_files(file_list)
 
-    # {input_file_name}
-    # {output_file_name}
-    # {input_file_id}
-
     cmd_template = '''
     dx download {project_id}:{input_file_id} &&
     outname="{output_file_name}" &&
     echo "output name is $outname" &&
     file_wo_prefix=${{outname#*_}} &&
+    echo $file_wo_prefix &&
     bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
     bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
     bcftools filter --output-type u -e "F_MISSING > 0.1" | 
@@ -224,14 +221,14 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
     mv -v "filtered_$file_wo_prefix" /home/dnanexus/out/output_files &&
     echo "File done: filtered_$file_wo_prefix" &&
     echo "Filtering for 5k samples" &&   
-    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --output-type b{clevel} "$file_wo_prefix" -o "5k_$file_wo_prefix" &&    
+    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --min-ac 1 --output-type b{clevel} "$file_wo_prefix" -o "5k_$file_wo_prefix" &&    
     mv -v "5k_$file_wo_prefix" /home/dnanexus/out/output_files &&
     output_file_filtered=$(dx upload "/home/dnanexus/out/output_files/filtered_$file_wo_prefix" --brief) &&
     dx-jobutil-add-output output_files "$output_file_filtered" --class=array:file &&
     echo "File uploaded: filtered_$file_wo_prefix $output_file_filtered" &&
     output_file_5k=$(dx upload "/home/dnanexus/out/output_files/5k_$file_wo_prefix" --brief) &&
     dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
-    echo "File done: 5k_{output_file_name}.bcf $output_file_5k" 
+    echo "File done: {output_file_name} $output_file_5k" 
     rm -v "/home/dnanexus/out/output_files/5k_$file_wo_prefix" "$file_wo_prefix" "/home/dnanexus/out/output_files/filtered_$file_wo_prefix"
     '''.replace("\n", " ").replace('{clevel}', str(clevel)).strip()
 
