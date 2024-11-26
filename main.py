@@ -34,11 +34,11 @@ class TaskStatus(PyEnum):
     TERMINATED = "terminated"
     DEBUG_HOLD = "debug hold"
     IDLE = "idle"
+    RESTARTABLE= "restartable"
 
 
-NON_RUNNING_JOB_STATUSES = [TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.PARTIALLY_FAILED, TaskStatus.TERMINATING,
-                            TaskStatus.TERMINATED]
-RUNNING_JOB_STATUSES = [TaskStatus.RUNNING, TaskStatus.RUNNABLE, TaskStatus.WAITING, TaskStatus.IDLE]
+NON_RUNNING_JOB_STATUSES = [TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.PARTIALLY_FAILED,  TaskStatus.TERMINATED]
+RUNNING_JOB_STATUSES = [TaskStatus.RUNNING, TaskStatus.RUNNABLE, TaskStatus.WAITING, TaskStatus.IDLE, TaskStatus.TERMINATING, TaskStatus.RESTARTABLE]
 
 
 class FileTask(Base):
@@ -209,27 +209,30 @@ def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project
 
     cmd_template = '''
     dx download {project_id}:{input_file_id} &&
-    echo "hi" &&
+    outname="{output_file_name}" &&
+    echo "output name is $outname" &&
+    file_wo_prefix=${{outname#*_}} &&
     bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
     bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
     bcftools filter --output-type u -e "F_MISSING > 0.1" | 
-    bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o {output_file_name} &&
-    mv -v {output_file_name} ~/out/output_files &&
-    echo "File done: {output_file_name}" &&
+    bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o "$file_wo_prefix" &&
+    echo "File done: $file_wo_prefix" &&
+    rm -v {input_file_name} &&
     echo "Second filtering of bcf file" &&
-    bcftools +setGT --output-type u ~/out/output_files/{output_file_name} -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
-    bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" | bcftools annotate -x 'INFO,FORMAT' --output-type b{clevel} -o filtered_{output_file_name} &&   
-    mv -v filtered_{output_file_name}.bcf ~/out/output_files &&
+    bcftools +setGT --output-type u "$file_wo_prefix" -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
+    bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" | bcftools annotate -x 'INFO,FORMAT' --output-type b{clevel} -o "filtered_$file_wo_prefix" &&   
+    mv -v "filtered_$file_wo_prefix" /home/dnanexus/out/output_files &&
+    echo "File done: filtered_$file_wo_prefix" &&
     echo "Filtering for 5k samples" &&   
-    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --output-type b ~/out/output_files/{output_file_name} -o 5k_{output_file_name}.bcf &&    
-    mv -v 5k_{output_file_name}.bcf ~/out/output_files &&
-    output_file_filtered=$(dx upload ~/out/output_files/filtered_{output_file_name}.bcf --brief) &&
+    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --output-type b{clevel} "$file_wo_prefix" -o "5k_$file_wo_prefix" &&    
+    mv -v "5k_$file_wo_prefix" /home/dnanexus/out/output_files &&
+    output_file_filtered=$(dx upload "/home/dnanexus/out/output_files/filtered_$file_wo_prefix" --brief) &&
     dx-jobutil-add-output output_files "$output_file_filtered" --class=array:file &&
-    echo "File uploaded: filtered_{output_file_name}.bcf $output_file_filtered" &&
-    output_file_5k=$(dx upload ~/out/output_files/5k_{output_file_name}.bcf --brief) &&
+    echo "File uploaded: filtered_$file_wo_prefix $output_file_filtered" &&
+    output_file_5k=$(dx upload "/home/dnanexus/out/output_files/5k_$file_wo_prefix" --brief) &&
     dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
     echo "File done: 5k_{output_file_name}.bcf $output_file_5k" 
-    rm -v ~/out/output_files/5k_{output_file_name}.bcf ~/out/output_files/{output_file_name}
+    rm -v "/home/dnanexus/out/output_files/5k_$file_wo_prefix" "$file_wo_prefix" "/home/dnanexus/out/output_files/filtered_$file_wo_prefix"
     '''.replace("\n", " ").replace('{clevel}', str(clevel)).strip()
 
     extra_vars = {"output_path": output_folder, "project_id": project_id}
