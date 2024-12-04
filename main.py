@@ -12,6 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import declarative_base
 
+import dxpy as dx
+
 import dx_utils
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -68,7 +70,7 @@ def list_done_files(file_path, project_id):
 
 
 def start_job(file_chunk, parallel_count, session, project_id, applet_id, instance_type, output_folder, cmd_template,
-              extra_vars):
+              extra_vars, priority="low"):
     if not extra_vars:
         extra_vars = {}
 
@@ -82,7 +84,8 @@ def start_job(file_chunk, parallel_count, session, project_id, applet_id, instan
     job_id = dx_utils.run_dx_applet(applet_input=applet_input,
                                     run_name=f"DXSub {len(file_chunk)} {parallel_count} {instance_type}",
                                     output_folder=output_folder, project_id=project_id, applet_id=applet_id,
-                                    instance_type=instance_type)
+                                    instance_type=instance_type,
+                                    priority = priority)
 
     for file in file_chunk:
         file.job_id = job_id
@@ -124,6 +127,7 @@ def update_file_status(instance_status, file_status, session):
     failed_count = 0
     successful_count = 0
 
+    #handles that files whose jobs have failed get set to "waiting" again 
     for running_file in running_files:
         if running_file.job_id in non_running_jobs:
             if running_file.output_file_name in file_status:
@@ -150,14 +154,24 @@ def load_raw_files(file_list_path):
     return file_list
 
 
+def restart_job_with_high_prio(job_to_cancel, paralell_count, session, project_id, applet_id, instance_type, output_folder,
+                          cmd_template, extra_vars, priority = "high"):
+        print(f"restarting job {job_to_cancel} with high priority")
+        job_files = session.query(FileTask).filter(
+                FileTask.job_id == job_to_cancel).all()
+        dx.api.job_terminate(job_to_cancel)
+        start_job(job_files, paralell_count, session, project_id, applet_id, instance_type, output_folder,
+                cmd_template, extra_vars, priority)
+
+
 def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id, instance_type, output_folder,
          cmd_template, extra_vars):
     with Session(engine) as session:
         setup_file_db(files=files, session=session)
 
         waiting_file_count = get_waiting_count(session)
+        logging.info(f"{waiting_file_count} files to run")
         running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
-
         while waiting_file_count > 0 or running_instance_count:
             instance_status = get_instance_status(project_id, applet_id)
             file_status = list_done_files(output_folder, project_id=project_id)
@@ -186,6 +200,15 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
             time.sleep(WAIT_TIME)
             waiting_file_count = get_waiting_count(session)
             running_instance_count = len(get_instance_status(project_id, applet_id, RUNNING_JOB_STATUSES))
+
+            # rerunning jobs that have been restarted more than 2 times with high priority
+            jobs_to_kill = [stat["job_id"] for stat in instance_status if ((stat["try"] > 1) & (stat["status"] == "running"))] # cancel if its the 3rd rerun            
+            for job_id in jobs_to_kill:
+                restart_job_with_high_prio(job_id, paralell_count, session, project_id, applet_id, instance_type, output_folder,
+                          cmd_template, extra_vars, priority = "high")
+            # record jobs that have more than x restarts
+            # record the files run by those jobs
+            # finish these jobs 
 
     logging.info("All jobs finished")
 
