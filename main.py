@@ -199,38 +199,12 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 @click.option('--project_id', required=True, type=str, help='Project ID to associate with jobs.')
 @click.option('--instance_type', required=True, type=str, help='Type of instance to run jobs on.')
 @click.option('--output_folder', required=True, type=str, help='Output folder path for processed files.')
-@click.option('--clevel', required=False, type=int, default=3, help='compression level of bcf output file')
-def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder, clevel):
+@click.option('--command_template_path', required=False, type=int, default=3, help='text file storing command template to submit. ')
+def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder, command_template_path):
     raw_files = load_raw_files(file_list)
-
-    cmd_template = '''
-    dx download {project_id}:{input_file_id} &&
-    outname="{output_file_name}" &&
-    echo "output name is $outname" &&
-    file_wo_prefix=${{outname#*_}} &&
-    echo $file_wo_prefix &&
-    bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
-    bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
-    bcftools filter --output-type u -e "F_MISSING > 0.1" | 
-    bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o "$file_wo_prefix" &&
-    echo "File done: $file_wo_prefix" &&
-    rm -v {input_file_name} &&
-    echo "Second filtering of bcf file" &&
-    bcftools +setGT --output-type u "$file_wo_prefix" -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
-    bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" | bcftools annotate -x 'INFO,FORMAT' --output-type b{clevel} -o "filtered_$file_wo_prefix" &&   
-    mv -v "filtered_$file_wo_prefix" /home/dnanexus/out/output_files &&
-    echo "File done: filtered_$file_wo_prefix" &&
-    echo "Filtering for 5k samples" &&   
-    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --min-ac 1 --output-type b{clevel} "$file_wo_prefix" -o "5k_$file_wo_prefix" &&    
-    mv -v "5k_$file_wo_prefix" /home/dnanexus/out/output_files &&
-    output_file_filtered=$(dx upload "/home/dnanexus/out/output_files/filtered_$file_wo_prefix" --brief) &&
-    dx-jobutil-add-output output_files "$output_file_filtered" --class=array:file &&
-    echo "File uploaded: filtered_$file_wo_prefix $output_file_filtered" &&
-    output_file_5k=$(dx upload "/home/dnanexus/out/output_files/5k_$file_wo_prefix" --brief) &&
-    dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
-    echo "File done: {output_file_name} $output_file_5k" 
-    rm -v "/home/dnanexus/out/output_files/5k_$file_wo_prefix" "$file_wo_prefix" "/home/dnanexus/out/output_files/filtered_$file_wo_prefix"
-    '''.replace("\n", " ").replace('{clevel}', str(clevel)).strip()
+    
+    with open(command_template_path) as ctp:
+        cmd_template = ctp.read().replace("\n", " ").strip()
 
     extra_vars = {"output_path": output_folder, "project_id": project_id}
 
