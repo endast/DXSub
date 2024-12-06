@@ -11,11 +11,11 @@ echo "File done: $file_wo_prefix" &&
 rm -v {input_file_name} &&
 echo "Second filtering of bcf file" &&
 bcftools +setGT --output-type u "$file_wo_prefix" -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
-bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" | bcftools annotate -x 'INFO,FORMAT' --output-type b{clevel} -o "filtered_$file_wo_prefix" &&   
+bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" | bcftools annotate -x 'INFO,FORMAT' --output-type b4 -o "filtered_$file_wo_prefix" &&   
 mv -v "filtered_$file_wo_prefix" /home/dnanexus/out/output_files &&
 echo "File done: filtered_$file_wo_prefix" &&
 echo "Filtering for 5k samples" &&   
-bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --min-ac 1 --output-type b{clevel} "$file_wo_prefix" -o "5k_$file_wo_prefix" &&    
+bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --min-ac 1 --output-type b4 "$file_wo_prefix" -o "5k_$file_wo_prefix" &&    
 mv -v "5k_$file_wo_prefix" /home/dnanexus/out/output_files &&
 output_file_filtered=$(dx upload "/home/dnanexus/out/output_files/filtered_$file_wo_prefix" --brief) &&
 dx-jobutil-add-output output_files "$output_file_filtered" --class=array:file &&
