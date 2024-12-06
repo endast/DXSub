@@ -34,11 +34,11 @@ class TaskStatus(PyEnum):
     TERMINATED = "terminated"
     DEBUG_HOLD = "debug hold"
     IDLE = "idle"
+    RESTARTABLE= "restartable"
 
 
-NON_RUNNING_JOB_STATUSES = [TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.PARTIALLY_FAILED, TaskStatus.TERMINATING,
-                            TaskStatus.TERMINATED]
-RUNNING_JOB_STATUSES = [TaskStatus.RUNNING, TaskStatus.RUNNABLE, TaskStatus.WAITING, TaskStatus.IDLE]
+NON_RUNNING_JOB_STATUSES = [TaskStatus.DONE, TaskStatus.FAILED, TaskStatus.PARTIALLY_FAILED,  TaskStatus.TERMINATED]
+RUNNING_JOB_STATUSES = [TaskStatus.RUNNING, TaskStatus.RUNNABLE, TaskStatus.WAITING, TaskStatus.IDLE, TaskStatus.TERMINATING, TaskStatus.RESTARTABLE]
 
 
 class FileTask(Base):
@@ -143,12 +143,10 @@ def update_file_status(instance_status, file_status, session):
 
 def load_raw_files(file_list_path):
     raw_file_df = pd.read_csv(file_list_path)
-
     file_list = []
 
     for f in raw_file_df.itertuples():
         file_list.append({"file_name": f[1], "file_id": f[2], "output_file_name": f[3]})
-
     return file_list
 
 
@@ -201,39 +199,38 @@ def main(files, max_instances, chunk_size, paralell_count, applet_id, project_id
 @click.option('--project_id', required=True, type=str, help='Project ID to associate with jobs.')
 @click.option('--instance_type', required=True, type=str, help='Type of instance to run jobs on.')
 @click.option('--output_folder', required=True, type=str, help='Output folder path for processed files.')
-def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder):
+@click.option('--clevel', required=False, type=int, default=3, help='compression level of bcf output file')
+def cli(file_list, max_instances, chunk_size, parallel_count, applet_id, project_id, instance_type, output_folder, clevel):
     raw_files = load_raw_files(file_list)
-
-    # {input_file_name}
-    # {output_file_name}
-    # {input_file_id}
 
     cmd_template = '''
     dx download {project_id}:{input_file_id} &&
+    outname="{output_file_name}" &&
+    echo "output name is $outname" &&
+    file_wo_prefix=${{outname#*_}} &&
+    echo $file_wo_prefix &&
     bcftools annotate -x ^FORMAT/GT,^FORMAT/GQ,^FORMAT/LAD -Ou {input_file_name} | 
     bcftools +setGT --output-type u -- -t q -i "FMT/GQ<=10 | smpl_sum(FMT/LAD)<7" -n . | 
     bcftools filter --output-type u -e "F_MISSING > 0.1" | 
-    bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o {output_file_name} &&
-    mv -v {output_file_name} ~/out/output_files &&
-    output_file_bcf=$(dx upload ~/out/output_files/{output_file_name} --brief) &&
-    echo "Ok uploaded {output_file_name}" &&
-    dx-jobutil-add-output output_files "$output_file_bcf" --class=array:file &&
-    echo "File done: {output_file_name} $output_file_bcf" &&
-    bcftools +setGT --output-type u ~/out/output_files/{output_file_name} -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
-    bcftools filter --output-type v -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" |
-    qctool -g - -filetype vcf -og {output_file_name}.bgen &&    
-    mv -v {output_file_name}.bgen ~/out/output_files &&
-    output_file_bgen=$(dx upload ~/out/output_files/{output_file_name}.bgen --brief) &&
-    dx-jobutil-add-output output_files "$output_file_bgen" --class=array:file &&
-    echo "File done: {output_file_name}.bgen $output_file_bgen" &&
-    rm -v {input_file_name} ~/out/output_files/{output_file_name}.bgen &&     
-    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --output-type b ~/out/output_files/{output_file_name} -o 5k_{output_file_name} &&    
-    mv -v 5k_{output_file_name} ~/out/output_files &&
-    output_file_5k=$(dx upload ~/out/output_files/5k_{output_file_name} --brief) &&
+    bcftools filter --soft-filter HWE_FAIL -e "INFO/HWE <= 1e-15" --output-type b -o "$file_wo_prefix" &&
+    echo "File done: $file_wo_prefix" &&
+    rm -v {input_file_name} &&
+    echo "Second filtering of bcf file" &&
+    bcftools +setGT --output-type u "$file_wo_prefix" -- -t q -i "(FMT/GT=\\"het\\" & (binom(FMT/LAD)<=0.001)) | smpl_sum(FMT/LAD)<10" -n . |
+    bcftools filter --output-type u -e "FILTER='HWE_FAIL' | F_MISSING > 0.1" | bcftools annotate -x 'INFO,FORMAT' --output-type b{clevel} -o "filtered_$file_wo_prefix" &&   
+    mv -v "filtered_$file_wo_prefix" /home/dnanexus/out/output_files &&
+    echo "File done: filtered_$file_wo_prefix" &&
+    echo "Filtering for 5k samples" &&   
+    bcftools view --force-samples --samples-file /cardinal_5k_samples.txt --min-ac 1 --output-type b{clevel} "$file_wo_prefix" -o "5k_$file_wo_prefix" &&    
+    mv -v "5k_$file_wo_prefix" /home/dnanexus/out/output_files &&
+    output_file_filtered=$(dx upload "/home/dnanexus/out/output_files/filtered_$file_wo_prefix" --brief) &&
+    dx-jobutil-add-output output_files "$output_file_filtered" --class=array:file &&
+    echo "File uploaded: filtered_$file_wo_prefix $output_file_filtered" &&
+    output_file_5k=$(dx upload "/home/dnanexus/out/output_files/5k_$file_wo_prefix" --brief) &&
     dx-jobutil-add-output output_files "$output_file_5k" --class=array:file &&
-    echo "File done: 5k_{output_file_name} $output_file_5k" &&
-    rm -v ~/out/output_files/5k_{output_file_name} ~/out/output_files/{output_file_name}
-    '''.replace("\n", " ").strip()
+    echo "File done: {output_file_name} $output_file_5k" 
+    rm -v "/home/dnanexus/out/output_files/5k_$file_wo_prefix" "$file_wo_prefix" "/home/dnanexus/out/output_files/filtered_$file_wo_prefix"
+    '''.replace("\n", " ").replace('{clevel}', str(clevel)).strip()
 
     extra_vars = {"output_path": output_folder, "project_id": project_id}
 
